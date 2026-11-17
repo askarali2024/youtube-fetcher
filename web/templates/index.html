@@ -1,0 +1,274 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>YouTube Shorts Downloader</title>
+  <style>
+    :root {
+      --bg: #f4f5f7;
+      --card: #ffffff;
+      --text: #1a1a2e;
+      --muted: #6b7280;
+      --accent: #ff0033;
+      --accent-hover: #d9002b;
+      --border: #e5e7eb;
+      --error-bg: #fef2f2;
+      --error-text: #991b1b;
+      --ok-bg: #ecfdf5;
+      --ok-text: #065f46;
+    }
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 24px;
+    }
+    .card {
+      background: var(--card);
+      width: 100%;
+      max-width: 520px;
+      border-radius: 16px;
+      box-shadow: 0 4px 24px rgba(0, 0, 0, 0.08);
+      padding: 40px 36px;
+    }
+    h1 { font-size: 1.5rem; margin-bottom: 6px; }
+    .subtitle { color: var(--muted); font-size: 0.9rem; margin-bottom: 28px; }
+    .input-row { display: flex; gap: 10px; }
+    input[type="url"] {
+      flex: 1;
+      padding: 13px 16px;
+      border: 1.5px solid var(--border);
+      border-radius: 10px;
+      font-size: 0.95rem;
+      outline: none;
+      transition: border-color 0.15s;
+    }
+    input[type="url"]:focus { border-color: var(--accent); }
+    button {
+      padding: 13px 22px;
+      background: var(--accent);
+      color: #fff;
+      border: none;
+      border-radius: 10px;
+      font-size: 0.95rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background 0.15s;
+      white-space: nowrap;
+    }
+    button:hover:not(:disabled) { background: var(--accent-hover); }
+    button:disabled { opacity: 0.55; cursor: not-allowed; }
+    .hint { color: var(--muted); font-size: 0.8rem; margin-top: 10px; }
+    .warning {
+      background: #fffbeb;
+      border: 1px solid #fcd34d;
+      color: #92400e;
+      border-radius: 10px;
+      padding: 12px 16px;
+      font-size: 0.85rem;
+      margin-bottom: 20px;
+      line-height: 1.45;
+      display: none;
+    }
+    .status { margin-top: 24px; display: none; }
+    .progress-track {
+      background: var(--border);
+      border-radius: 999px;
+      height: 10px;
+      overflow: hidden;
+    }
+    .progress-fill {
+      background: var(--accent);
+      height: 100%;
+      width: 0%;
+      border-radius: 999px;
+      transition: width 0.3s ease;
+    }
+    .progress-text {
+      display: flex;
+      justify-content: space-between;
+      color: var(--muted);
+      font-size: 0.85rem;
+      margin-top: 8px;
+    }
+    .spinner {
+      display: inline-block;
+      width: 13px;
+      height: 13px;
+      border: 2px solid rgba(0,0,0,0.15);
+      border-top-color: var(--accent);
+      border-radius: 50%;
+      animation: spin 0.7s linear infinite;
+      vertical-align: -2px;
+      margin-right: 6px;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .error-box {
+      background: var(--error-bg);
+      color: var(--error-text);
+      border-radius: 10px;
+      padding: 14px 16px;
+      font-size: 0.9rem;
+      margin-top: 24px;
+      line-height: 1.5;
+      display: none;
+      white-space: pre-wrap;
+    }
+    .result { margin-top: 24px; display: none; text-align: center; }
+    .result video {
+      width: 100%;
+      max-height: 420px;
+      border-radius: 12px;
+      background: #000;
+      margin-bottom: 16px;
+    }
+    .result a.download-link {
+      display: block;
+      padding: 13px 22px;
+      background: var(--accent);
+      color: #fff;
+      border-radius: 10px;
+      font-size: 0.95rem;
+      font-weight: 600;
+      text-decoration: none;
+      transition: background 0.15s;
+    }
+    .result a.download-link:hover { background: var(--accent-hover); }
+    .result .ok-note { color: var(--ok-text); font-size: 0.85rem; margin-bottom: 14px; }
+  </style>
+</head>
+<body>
+  <main class="card">
+    <h1>🎬 YouTube Shorts Downloader</h1>
+    <p class="subtitle">Paste a Shorts URL, hit Download, and save the video as an MP4.</p>
+
+    {% if not ffmpeg_available %}
+    <div class="warning" style="display:block">
+      <strong>FFmpeg was not found.</strong> Some videos only offer separate video
+      and audio streams, which cannot be merged without FFmpeg — those downloads
+      will fail. Install FFmpeg or run <code>pip install imageio-ffmpeg</code>.
+    </div>
+    {% endif %}
+
+    <form id="download-form" class="input-row">
+      <input type="url" id="url" placeholder="https://www.youtube.com/shorts/…" required>
+      <button type="submit" id="btn">Download</button>
+    </form>
+    <p class="hint">Also accepts youtu.be and watch?v= links.</p>
+
+    <div class="status" id="status">
+      <div class="progress-track"><div class="progress-fill" id="progress-fill"></div></div>
+      <div class="progress-text">
+        <span id="status-label"><span class="spinner"></span>Fetching video info…</span>
+        <span id="status-detail"></span>
+      </div>
+    </div>
+
+    <div class="error-box" id="error"></div>
+
+    <div class="result" id="result">
+      <p class="ok-note" id="ok-note"></p>
+      <video id="preview" controls playsinline></video>
+      <a id="save-link" class="download-link" href="#">⬇️ Save to your device</a>
+    </div>
+  </main>
+
+  <script>
+    const form = document.getElementById("download-form");
+    const urlInput = document.getElementById("url");
+    const btn = document.getElementById("btn");
+    const statusBox = document.getElementById("status");
+    const progressFill = document.getElementById("progress-fill");
+    const statusLabel = document.getElementById("status-label");
+    const statusDetail = document.getElementById("status-detail");
+    const errorBox = document.getElementById("error");
+    const resultBox = document.getElementById("result");
+    const okNote = document.getElementById("ok-note");
+    const preview = document.getElementById("preview");
+    const saveLink = document.getElementById("save-link");
+    let pollTimer = null;
+
+    function resetUI() {
+      clearInterval(pollTimer);
+      statusBox.style.display = "none";
+      errorBox.style.display = "none";
+      resultBox.style.display = "none";
+      progressFill.style.width = "0%";
+      statusLabel.innerHTML = '<span class="spinner"></span>Fetching video info…';
+      statusDetail.textContent = "";
+      preview.removeAttribute("src");
+      preview.load();
+    }
+
+    function showError(message) {
+      resetUI();
+      errorBox.textContent = message;
+      errorBox.style.display = "block";
+      btn.disabled = false;
+      btn.textContent = "Download";
+    }
+
+    async function poll(jobId) {
+      try {
+        const res = await fetch(`/api/progress/${jobId}`);
+        if (!res.ok) { showError("Lost track of the download. Please try again."); return; }
+        const job = await res.json();
+
+        if (job.status === "error") { showError(job.error); return; }
+
+        progressFill.style.width = (job.progress * 100).toFixed(1) + "%";
+        statusDetail.textContent = job.detail || "";
+
+        if (job.status === "starting") {
+          statusLabel.innerHTML = '<span class="spinner"></span>Fetching video info…';
+        } else if (job.status === "downloading") {
+          statusLabel.innerHTML = '<span class="spinner"></span>Downloading…';
+        } else if (job.status === "merging") {
+          statusLabel.innerHTML = '<span class="spinner"></span>Merging streams…';
+        } else if (job.status === "done") {
+          clearInterval(pollTimer);
+          statusBox.style.display = "none";
+          okNote.textContent = "✅ " + (job.detail || "Ready!");
+          saveLink.href = `/api/file/${jobId}`;
+          preview.src = `/api/file/${jobId}`;
+          resultBox.style.display = "block";
+          btn.disabled = false;
+          btn.textContent = "Download";
+          saveLink.click(); // auto-trigger the browser download
+          return;
+        }
+        pollTimer = setTimeout(() => poll(jobId), 500);
+      } catch (err) {
+        showError("Connection to the server was lost.");
+      }
+    }
+
+    form.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      resetUI();
+      btn.disabled = true;
+      btn.textContent = "Downloading…";
+
+      try {
+        const res = await fetch("/api/download", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ url: urlInput.value }),
+        });
+        const data = await res.json();
+        if (!res.ok) { showError(data.error || "Something went wrong."); return; }
+        statusBox.style.display = "block";
+        poll(data.job_id);
+      } catch (err) {
+        showError("Could not reach the server. Is it still running?");
+      }
+    });
+  </script>
+</body>
+</html>

@@ -1,0 +1,452 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>YouTube Shorts Downloader</title>
+  <meta name="description" content="Download YouTube Shorts as MP4 — paste a link, hit download.">
+  <style>
+    :root {
+      --bg: #f4f5f7;
+      --card: #ffffff;
+      --text: #1a1a2e;
+      --muted: #6b7280;
+      --accent: #ff0033;
+      --accent-hover: #d9002b;
+      --border: #e5e7eb;
+      --error-bg: #fef2f2;
+      --error-text: #991b1b;
+    }
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 24px;
+    }
+    .card {
+      background: var(--card);
+      width: 100%;
+      max-width: 520px;
+      border-radius: 16px;
+      box-shadow: 0 4px 24px rgba(0, 0, 0, 0.08);
+      padding: 40px 36px;
+    }
+    h1 { font-size: 1.5rem; margin-bottom: 6px; }
+    .subtitle { color: var(--muted); font-size: 0.9rem; margin-bottom: 28px; }
+    .input-row { display: flex; gap: 10px; }
+    input[type="url"] {
+      flex: 1;
+      min-width: 0;
+      padding: 13px 16px;
+      border: 1.5px solid var(--border);
+      border-radius: 10px;
+      font-size: 0.95rem;
+      outline: none;
+      transition: border-color 0.15s;
+    }
+    input[type="url"]:focus { border-color: var(--accent); }
+    button {
+      padding: 13px 22px;
+      background: var(--accent);
+      color: #fff;
+      border: none;
+      border-radius: 10px;
+      font-size: 0.95rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background 0.15s;
+      white-space: nowrap;
+    }
+    button:hover:not(:disabled) { background: var(--accent-hover); }
+    button:disabled { opacity: 0.55; cursor: not-allowed; }
+    .hint { color: var(--muted); font-size: 0.8rem; margin-top: 10px; }
+    .status { margin-top: 24px; display: none; }
+    .status-line { display: flex; align-items: center; gap: 8px; font-size: 0.9rem; color: var(--text); }
+    .spinner {
+      flex-shrink: 0;
+      width: 16px;
+      height: 16px;
+      border: 2px solid rgba(0, 0, 0, 0.15);
+      border-top-color: var(--accent);
+      border-radius: 50%;
+      animation: spin 0.7s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .status-sub { color: var(--muted); font-size: 0.8rem; margin: 8px 0 0 24px; }
+    .bar-track {
+      background: var(--border);
+      border-radius: 999px;
+      height: 6px;
+      margin-top: 14px;
+      overflow: hidden;
+      position: relative;
+    }
+    .bar-shimmer {
+      position: absolute;
+      width: 35%;
+      height: 100%;
+      background: var(--accent);
+      border-radius: 999px;
+      animation: shimmer 1.2s ease-in-out infinite;
+    }
+    @keyframes shimmer {
+      0% { left: -35%; }
+      100% { left: 100%; }
+    }
+    .error-box {
+      background: var(--error-bg);
+      color: var(--error-text);
+      border-radius: 10px;
+      padding: 14px 16px;
+      font-size: 0.9rem;
+      margin-top: 24px;
+      line-height: 1.5;
+      display: none;
+      white-space: pre-wrap;
+    }
+    .result { margin-top: 24px; display: none; text-align: center; }
+    .result video {
+      width: 100%;
+      max-height: 420px;
+      border-radius: 12px;
+      background: #000;
+      margin-bottom: 16px;
+    }
+    .result a.download-link {
+      display: block;
+      padding: 13px 22px;
+      background: var(--accent);
+      color: #fff;
+      border-radius: 10px;
+      font-size: 0.95rem;
+      font-weight: 600;
+      text-decoration: none;
+      transition: background 0.15s;
+    }
+    .result a.download-link:hover { background: var(--accent-hover); }
+    .ok-note { color: #065f46; font-size: 0.85rem; margin-bottom: 14px; }
+    details.advanced { margin-top: 28px; font-size: 0.85rem; color: var(--muted); }
+    details.advanced summary { cursor: pointer; user-select: none; }
+    .advanced-body {
+      margin-top: 12px;
+      padding: 14px 16px;
+      background: #f9fafb;
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      line-height: 1.6;
+    }
+    .advanced-body input {
+      width: 100%;
+      margin-top: 6px;
+      padding: 9px 12px;
+      border: 1.5px solid var(--border);
+      border-radius: 8px;
+      font-size: 0.85rem;
+      outline: none;
+    }
+    .advanced-body input:focus { border-color: var(--accent); }
+    .advanced-body .small-btn {
+      margin-top: 10px;
+      padding: 8px 16px;
+      font-size: 0.8rem;
+      background: var(--text);
+      border-radius: 8px;
+    }
+    footer {
+      margin-top: 32px;
+      color: var(--muted);
+      font-size: 0.75rem;
+      text-align: center;
+      line-height: 1.6;
+    }
+    footer a { color: var(--muted); }
+    code { background: #f3f4f6; padding: 1px 5px; border-radius: 4px; font-size: 0.85em; }
+  </style>
+</head>
+<body>
+  <main class="card">
+    <h1>🎬 YouTube Shorts Downloader</h1>
+    <p class="subtitle">Paste a Shorts URL, hit Download, and save the video as an MP4.</p>
+
+    <form id="download-form" class="input-row">
+      <input type="url" id="url" placeholder="https://www.youtube.com/shorts/…" autocomplete="off" required>
+      <button type="submit" id="btn">Download</button>
+    </form>
+    <p class="hint">Also accepts youtu.be and watch?v= links.</p>
+
+    <div class="status" id="status">
+      <div class="status-line"><span class="spinner"></span><span id="status-label">Starting…</span></div>
+      <div class="status-sub" id="status-sub"></div>
+      <div class="bar-track"><div class="bar-shimmer"></div></div>
+    </div>
+
+    <div class="error-box" id="error"></div>
+
+    <div class="result" id="result">
+      <p class="ok-note" id="ok-note"></p>
+      <video id="preview" controls playsinline></video>
+      <a id="save-link" class="download-link" href="#">⬇️ Save to your device</a>
+    </div>
+
+    <details class="advanced">
+      <summary>Advanced — processing server</summary>
+      <div class="advanced-body">
+        Downloads are processed by free community
+        <a href="https://github.com/imputnet/cobalt" target="_blank" rel="noopener">cobalt</a>
+        API instances; this page tries them in order automatically. If none work (they
+        get rate-limited or blocked by YouTube sometimes), paste any cobalt instance
+        URL below and it will be tried first. Stored only in your browser.
+        <input type="url" id="custom-instance" placeholder="https://my-cobalt-instance.example">
+        <button type="button" class="small-btn" id="save-instance">Save</button>
+        <span id="saved-note"></span>
+      </div>
+    </details>
+  </main>
+
+  <footer>
+    Runs entirely in your browser — no accounts, no tracking.<br>
+    Only download content you own or have permission to use. Respect YouTube's
+    Terms of Service and copyright law.
+  </footer>
+
+  <script>
+    "use strict";
+
+    // Processing instances (cobalt JSON API). The verified one goes first;
+    // the live community list is merged in at runtime when reachable.
+    const BUILTIN_INSTANCES = [
+      "https://rue-cobalt.xenon.zone",
+      "https://cobaltapi.cjs.nz",
+    ];
+    const LIVE_LIST_URL = "https://instances.cobalt.best/instances.json";
+    const REQUEST_TIMEOUT_MS = 90000;
+
+    const YOUTUBE_URL_RE = /^(?:https?:\/\/)?(?:www\.|m\.)?(?:youtube\.com\/(?:shorts\/|watch\?v=|live\/)|youtu\.be\/)([A-Za-z0-9_-]{11})(?:[?&#\/].*)?$/i;
+
+    const form = document.getElementById("download-form");
+    const urlInput = document.getElementById("url");
+    const btn = document.getElementById("btn");
+    const statusBox = document.getElementById("status");
+    const statusLabel = document.getElementById("status-label");
+    const statusSub = document.getElementById("status-sub");
+    const errorBox = document.getElementById("error");
+    const resultBox = document.getElementById("result");
+    const okNote = document.getElementById("ok-note");
+    const preview = document.getElementById("preview");
+    const saveLink = document.getElementById("save-link");
+    const customInput = document.getElementById("custom-instance");
+    const saveInstanceBtn = document.getElementById("save-instance");
+    const savedNote = document.getElementById("saved-note");
+
+    let extraInstances = [];
+    let timerId = null;
+
+    // ------------------------------------------------------------------
+    // Instance chain
+    // ------------------------------------------------------------------
+
+    function normalizeInstance(url) {
+      try {
+        const u = new URL(url.trim());
+        if (u.protocol !== "https:" && u.protocol !== "http:") return null;
+        u.pathname = u.pathname.replace(/\/+$/, "");
+        u.search = u.hash = "";
+        return u.toString().replace(/\/+$/, "");
+      } catch {
+        return null;
+      }
+    }
+
+    function instanceChain() {
+      const chain = [];
+      const custom = normalizeInstance(localStorage.getItem("customInstance") || "");
+      if (custom) chain.push(custom);
+      for (const api of [...BUILTIN_INSTANCES, ...extraInstances]) {
+        if (!chain.includes(api)) chain.push(api);
+      }
+      return chain;
+    }
+
+    // Merge in the live community list (online, no-auth, CORS, YouTube OK).
+    (async () => {
+      try {
+        const res = await fetch(LIVE_LIST_URL, { signal: AbortSignal.timeout(10000) });
+        const list = await res.json();
+        const seen = new Set([...BUILTIN_INSTANCES.map((x) => new URL(x).host)]);
+        for (const inst of list) {
+          const info = inst.info || {};
+          const services = inst.services || {};
+          if (!inst.online || info.auth || !info.cors || services.youtube !== true) continue;
+          const api = normalizeInstance(inst.protocol + "://" + inst.api);
+          if (!api || seen.has(new URL(api).host)) continue;
+          seen.add(new URL(api).host);
+          extraInstances.push(api);
+        }
+      } catch {
+        /* list unreachable — built-in instances still work */
+      }
+    })();
+
+    // ------------------------------------------------------------------
+    // UI helpers
+    // ------------------------------------------------------------------
+
+    function resetUI() {
+      clearInterval(timerId);
+      statusBox.style.display = "none";
+      errorBox.style.display = "none";
+      resultBox.style.display = "none";
+      preview.removeAttribute("src");
+      preview.load();
+      saveLink.removeAttribute("href");
+    }
+
+    function showError(message) {
+      resetUI();
+      errorBox.textContent = message;
+      errorBox.style.display = "block";
+      btn.disabled = false;
+      btn.textContent = "Download";
+    }
+
+    function startTimer() {
+      const started = Date.now();
+      clearInterval(timerId);
+      timerId = setInterval(() => {
+        statusSub.textContent = `Elapsed ${Math.round((Date.now() - started) / 1000)}s`;
+      }, 1000);
+    }
+
+    // ------------------------------------------------------------------
+    // Download flow
+    // ------------------------------------------------------------------
+
+    async function requestFromInstance(api, url) {
+      const res = await fetch(api + "/", {
+        method: "POST",
+        headers: { "Accept": "application/json", "Content-Type": "application/json" },
+        body: JSON.stringify({ url }),
+        signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+      });
+      return res.json();
+    }
+
+    function friendlyCobaltError(code) {
+      if (code === "error.api.link.invalid" || code === "error.api.link.unsupported")
+        return "FATAL:That doesn't look like a valid YouTube URL. Please check it and try again.";
+      if (code === "error.api.youtube.login")
+        return "SKIP:This server can't reach YouTube right now.";
+      if (code === "error.api.auth.jwt.missing" || code === "error.api.auth.key.invalid" || code === "error.api.auth.turnstile")
+        return "SKIP:This server requires sign-in — skipping.";
+      if (code === "error.api.rate_exceeded" || code === "error.api.limit_reached")
+        return "SKIP:This server is rate-limited right now.";
+      if (code === "error.api.youtube.video_unavailable" || code === "error.api.youtube.video_age")
+        return "FATAL:This video is unavailable, private, or age-restricted.";
+      return null; // unknown → generic skip
+    }
+
+    async function handleDownload(url) {
+      const chain = instanceChain();
+      const failures = [];
+
+      for (const api of chain) {
+        const host = new URL(api).host;
+        statusLabel.textContent = "Processing video…";
+        statusSub.textContent = `Via ${host}` + (failures.length ? ` (skipped: ${failures.length})` : "");
+        startTimer();
+
+        let data;
+        try {
+          data = await requestFromInstance(api, url);
+        } catch {
+          failures.push(host);
+          continue;
+        }
+
+        if (data.status === "tunnel" || data.status === "redirect") {
+          clearInterval(timerId);
+          statusBox.style.display = "none";
+          const filename = data.filename || "short.mp4";
+          okNote.textContent = "✅ Ready — downloading " + filename;
+          saveLink.href = data.url;
+          saveLink.setAttribute("download", filename);
+          preview.src = data.url;
+          resultBox.style.display = "block";
+          btn.disabled = false;
+          btn.textContent = "Download";
+          saveLink.click(); // auto-trigger the browser download
+          return;
+        }
+
+        if (data.error) {
+          const mapped = friendlyCobaltError(data.error.code);
+          if (mapped && mapped.startsWith("FATAL:")) {
+            showError(mapped.slice(6));
+            return;
+          }
+          failures.push(host);
+          continue; // try next instance
+        }
+
+        failures.push(host);
+      }
+
+      showError(
+        "Could not download this video — none of the processing servers worked" +
+        (failures.length ? ` (tried: ${failures.join(", ")})` : "") +
+        ".\n\nThese free community servers get rate-limited or blocked by YouTube " +
+        "sometimes. Open the Advanced section below and paste a different cobalt " +
+        "instance URL, or retry in a few minutes."
+      );
+    }
+
+    // ------------------------------------------------------------------
+    // Events
+    // ------------------------------------------------------------------
+
+    form.addEventListener("submit", (e) => {
+      e.preventDefault();
+      resetUI();
+
+      const url = urlInput.value.trim();
+      if (!YOUTUBE_URL_RE.test(url)) {
+        showError(
+          "That doesn't look like a valid YouTube URL.\n\n" +
+          "Expected something like https://www.youtube.com/shorts/xxxxxxxxxxx " +
+          "or https://youtu.be/xxxxxxxxxxx."
+        );
+        return;
+      }
+
+      btn.disabled = true;
+      btn.textContent = "Downloading…";
+      statusLabel.textContent = "Starting…";
+      statusSub.textContent = "";
+      statusBox.style.display = "block";
+      handleDownload(url);
+    });
+
+    saveInstanceBtn.addEventListener("click", () => {
+      const value = customInput.value.trim();
+      if (!value) {
+        localStorage.removeItem("customInstance");
+        savedNote.textContent = " Cleared.";
+      } else if (normalizeInstance(value)) {
+        localStorage.setItem("customInstance", normalizeInstance(value));
+        savedNote.textContent = " Saved ✓";
+      } else {
+        savedNote.textContent = " Not a valid URL.";
+      }
+      setTimeout(() => (savedNote.textContent = ""), 2000);
+    });
+
+    customInput.value = localStorage.getItem("customInstance") || "";
+  </script>
+</body>
+</html>
