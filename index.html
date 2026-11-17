@@ -246,6 +246,11 @@
 
     let extraInstances = [];
     let timerId = null;
+    let currentDownload = null; // { api, url, filename, fetchedAt }
+
+    // Cobalt tunnel links expire after ~10 minutes; if the user watched the
+    // preview for a while, fetch a fresh link before downloading.
+    const TUNNEL_REFRESH_MS = 4 * 60 * 1000;
 
     // ------------------------------------------------------------------
     // Instance chain
@@ -373,15 +378,15 @@
           clearInterval(timerId);
           statusBox.style.display = "none";
           const filename = data.filename || "short.mp4";
-          okNote.textContent = "✅ Ready — downloading " + filename;
+          okNote.textContent = "✅ Ready — preview it above, then click Save to your device to download";
           saveLink.href = data.url;
           saveLink.setAttribute("download", filename);
           preview.src = data.url;
           resultBox.style.display = "block";
           btn.disabled = false;
           btn.textContent = "Download";
-          saveLink.click(); // auto-trigger the browser download
-          return;
+          currentDownload = { api, url, filename, fetchedAt: Date.now() };
+          return; // no auto-download — the user decides when to save
         }
 
         if (data.error) {
@@ -430,6 +435,33 @@
       statusSub.textContent = "";
       statusBox.style.display = "block";
       handleDownload(url);
+    });
+
+    let bypassRefresh = false;
+
+    saveLink.addEventListener("click", async (e) => {
+      if (bypassRefresh) { bypassRefresh = false; return; } // second click of a refresh — let the browser download it
+      if (!currentDownload) return;
+      if (Date.now() - currentDownload.fetchedAt < TUNNEL_REFRESH_MS) return; // link still fresh
+
+      // The link is stale (long preview). Get a fresh one, then download.
+      e.preventDefault();
+      const original = saveLink.textContent;
+      saveLink.textContent = "Refreshing link…";
+      try {
+        const data = await requestFromInstance(currentDownload.api, currentDownload.url);
+        if (data.status === "tunnel" || data.status === "redirect") {
+          currentDownload.fetchedAt = Date.now();
+          const filename = data.filename || currentDownload.filename;
+          saveLink.href = data.url;
+          saveLink.setAttribute("download", filename);
+        }
+      } catch {
+        /* refresh failed — fall back to the (possibly stale) cached link */
+      }
+      saveLink.textContent = original;
+      bypassRefresh = true;
+      saveLink.click();
     });
 
     saveInstanceBtn.addEventListener("click", () => {

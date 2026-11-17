@@ -234,14 +234,13 @@
         } else if (job.status === "done") {
           clearInterval(pollTimer);
           statusBox.style.display = "none";
-          okNote.textContent = "✅ " + (job.detail || "Ready!");
+          okNote.textContent = "✅ " + (job.detail || "Ready!") + " — preview it above, then click Save to your device to download";
           saveLink.href = `/api/file/${jobId}`;
           preview.src = `/api/file/${jobId}`;
           resultBox.style.display = "block";
           btn.disabled = false;
           btn.textContent = "Download";
-          saveLink.click(); // auto-trigger the browser download
-          return;
+          return; // no auto-download — the user decides when to save
         }
         pollTimer = setTimeout(() => poll(jobId), 500);
       } catch (err) {
