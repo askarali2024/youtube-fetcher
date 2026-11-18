@@ -266,8 +266,12 @@ def file(job_id):
             abort(404)
         file_path, download_name = job["file_path"], job["download_name"]
     try:
-        return send_file(file_path, as_attachment=True,
-                         download_name=download_name, mimetype="video/mp4")
+        # The <video> preview uses ?inline=1; the Save button (default)
+        # requests the file as an attachment so the browser downloads it.
+        as_attachment = "inline" not in request.args
+        return send_file(file_path, as_attachment=as_attachment,
+                         download_name=download_name, mimetype="video/mp4",
+                         conditional=True)
     except FileNotFoundError:
         abort(410)  # cached file expired — tell the client to re-download
 

@@ -87,12 +87,18 @@
       overflow: hidden;
       position: relative;
     }
-    .bar-shimmer {
+    .bar-fill {
       position: absolute;
-      width: 35%;
+      top: 0;
+      left: 0;
       height: 100%;
+      width: 0%;
       background: var(--accent);
       border-radius: 999px;
+      transition: width 0.2s ease;
+    }
+    .bar-fill.indeterminate {
+      width: 35%;
       animation: shimmer 1.2s ease-in-out infinite;
     }
     @keyframes shimmer {
@@ -183,7 +189,7 @@
     <div class="status" id="status">
       <div class="status-line"><span class="spinner"></span><span id="status-label">Starting…</span></div>
       <div class="status-sub" id="status-sub"></div>
-      <div class="bar-track"><div class="bar-shimmer"></div></div>
+      <div class="bar-track"><div class="bar-fill" id="bar-fill"></div></div>
     </div>
 
     <div class="error-box" id="error"></div>
@@ -226,6 +232,8 @@
     ];
     const LIVE_LIST_URL = "https://instances.cobalt.best/instances.json";
     const REQUEST_TIMEOUT_MS = 90000;
+    const BLOB_TIMEOUT_MS = 10 * 60 * 1000;   // fetching the video itself can take a while
+    const MAX_BLOB_BYTES = 900 * 1024 * 1024; // don't hold files bigger than ~900 MB in memory
 
     const VIDEO_ID_RE = /^[A-Za-z0-9_-]{11}$/;
 
@@ -259,6 +267,7 @@
     const statusBox = document.getElementById("status");
     const statusLabel = document.getElementById("status-label");
     const statusSub = document.getElementById("status-sub");
+    const barFill = document.getElementById("bar-fill");
     const errorBox = document.getElementById("error");
     const resultBox = document.getElementById("result");
     const okNote = document.getElementById("ok-note");
@@ -270,7 +279,8 @@
 
     let extraInstances = [];
     let timerId = null;
-    let currentDownload = null; // { api, url, filename, fetchedAt }
+    let currentDownload = null; // { api, url, filename, fetchedAt, directUrl }
+    let objectUrl = null;      // local blob URL for the finished video
 
     // Cobalt tunnel links expire after ~10 minutes; if the user watched the
     // preview for a while, fetch a fresh link before downloading.
@@ -334,6 +344,25 @@
       preview.removeAttribute("src");
       preview.load();
       saveLink.removeAttribute("href");
+      if (objectUrl) {
+        URL.revokeObjectURL(objectUrl);
+        objectUrl = null;
+      }
+    }
+
+    function setBar(frac) {
+      barFill.classList.remove("indeterminate");
+      barFill.style.left = "0";
+      barFill.style.width = (frac * 100).toFixed(1) + "%";
+    }
+
+    function setBarIndeterminate() {
+      barFill.classList.add("indeterminate");
+      barFill.style.width = "";
+    }
+
+    function fmtMB(bytes) {
+      return (bytes / (1024 * 1024)).toFixed(1) + " MB";
     }
 
     function showError(message) {
@@ -370,6 +399,90 @@
       return res.json();
     }
 
+    // Pull the finished video into a local Blob and hand the page a blob URL.
+    //
+    // Why: cobalt tunnel URLs send Content-Disposition: attachment and no
+    // MIME type, which browsers refuse to play in a <video> tag — and the
+    // download attribute is ignored for cross-origin links, so the Save
+    // button can't trigger a proper download. A same-origin blob URL fixes
+    // both, with a real progress bar while it streams in.
+    //
+    // Also verifies the stream actually delivers bytes: some instances hand
+    // back a tunnel URL that streams nothing (common with longer videos).
+    // Returns true if the video is ready, false to try the next instance.
+    async function finishWithTunnel(api, pageUrl, data) {
+      clearInterval(timerId);
+      const filename = data.filename || "video.mp4";
+      currentDownload = {
+        api,
+        url: pageUrl,
+        filename,
+        fetchedAt: Date.now(),
+        directUrl: data.url,
+      };
+
+      statusLabel.textContent = "Downloading video…";
+      statusSub.textContent = "";
+      setBarIndeterminate();
+
+      try {
+        const res = await fetch(data.url, { signal: AbortSignal.timeout(BLOB_TIMEOUT_MS) });
+        if (!res.ok) throw new Error("HTTP " + res.status);
+
+        const total = Number(
+          res.headers.get("Estimated-Content-Length") || res.headers.get("Content-Length") || 0
+        );
+
+        // Too big to hold in memory — link the tunnel directly instead
+        // (the download works; the in-browser preview is skipped).
+        if (total > MAX_BLOB_BYTES) {
+          statusBox.style.display = "none";
+          okNote.textContent = "✅ Ready — click Save to your device to download (file too large to preview)";
+          saveLink.href = data.url;
+          saveLink.setAttribute("download", filename);
+          resultBox.style.display = "block";
+          btn.disabled = false;
+          btn.textContent = "Download";
+          return true;
+        }
+
+        const reader = res.body.getReader();
+        const chunks = [];
+        let received = 0;
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          chunks.push(value);
+          received += value.length;
+          if (total) {
+            setBar(Math.min(received / total, 1));
+            statusSub.textContent = `${fmtMB(received)} / ${fmtMB(total)} (${Math.round((received / total) * 100)}%)`;
+          } else {
+            statusSub.textContent = fmtMB(received);
+          }
+        }
+        const blob = new Blob(chunks, { type: "video/mp4" });
+        if (blob.size === 0) return false; // tunnel produced no data — try next instance
+
+        if (objectUrl) URL.revokeObjectURL(objectUrl);
+        objectUrl = URL.createObjectURL(blob);
+
+        statusBox.style.display = "none";
+        okNote.textContent = "✅ Ready — preview it above, then click Save to your device to download";
+        saveLink.href = objectUrl;
+        saveLink.setAttribute("download", filename);
+        preview.src = objectUrl;
+        resultBox.style.display = "block";
+        btn.disabled = false;
+        btn.textContent = "Download";
+        return true;
+      } catch {
+        // Stream failed (expired link, CORS, network…) — signal the caller
+        // to try the next instance.
+        return false;
+      }
+    }
+
     function friendlyCobaltError(code) {
       if (code === "error.api.link.invalid" || code === "error.api.link.unsupported")
         return "FATAL:That doesn't look like a valid YouTube URL. Please check it and try again.";
@@ -392,6 +505,7 @@
         const host = new URL(api).host;
         statusLabel.textContent = "Processing video…";
         statusSub.textContent = `Via ${host}` + (failures.length ? ` (skipped: ${failures.length})` : "");
+        setBarIndeterminate();
         startTimer();
 
         let data;
@@ -403,18 +517,10 @@
         }
 
         if (data.status === "tunnel" || data.status === "redirect") {
-          clearInterval(timerId);
-          statusBox.style.display = "none";
-          const filename = data.filename || "short.mp4";
-          okNote.textContent = "✅ Ready — preview it above, then click Save to your device to download";
-          saveLink.href = data.url;
-          saveLink.setAttribute("download", filename);
-          preview.src = data.url;
-          resultBox.style.display = "block";
-          btn.disabled = false;
-          btn.textContent = "Download";
-          currentDownload = { api, url, filename, fetchedAt: Date.now() };
-          return; // no auto-download — the user decides when to save
+          const ok = await finishWithTunnel(api, url, data);
+          if (ok) return;
+          failures.push(host + " (empty stream)");
+          continue; // tunnel handed back a link that streams nothing — next instance
         }
 
         if (data.error) {
@@ -431,11 +537,16 @@
       }
 
       showError(
-        "Could not download this video — none of the processing servers worked" +
-        (failures.length ? ` (tried: ${failures.join(", ")})` : "") +
-        ".\n\nThese free community servers get rate-limited or blocked by YouTube " +
-        "sometimes. Open the Advanced section below and paste a different cobalt " +
-        "instance URL, or retry in a few minutes."
+        "Could not download this video.\n\n" +
+        (failures.length ? "Tried: " + failures.join(", ") + "\n\n" : "") +
+        "The free community servers that power this page either require sign-in, " +
+        "are rate-limited, or couldn't stream this particular video — longer " +
+        "videos often fail on them.\n\n" +
+        "Options:\n" +
+        "• Retry in a few minutes\n" +
+        "• Open the Advanced section and paste your own cobalt instance URL\n" +
+        "• For reliable downloads of any video, use the self-hosted Python " +
+        "version included in this repo"
       );
     }
 
@@ -461,6 +572,7 @@
       btn.textContent = "Downloading…";
       statusLabel.textContent = "Starting…";
       statusSub.textContent = "";
+      setBarIndeterminate();
       statusBox.style.display = "block";
       handleDownload(url);
     });
@@ -470,6 +582,7 @@
     saveLink.addEventListener("click", async (e) => {
       if (bypassRefresh) { bypassRefresh = false; return; } // second click of a refresh — let the browser download it
       if (!currentDownload) return;
+      if (saveLink.href.startsWith("blob:")) return; // local blob — always valid, downloads directly
       if (Date.now() - currentDownload.fetchedAt < TUNNEL_REFRESH_MS) return; // link still fresh
 
       // The link is stale (long preview). Get a fresh one, then download.

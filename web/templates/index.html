@@ -236,7 +236,7 @@
           statusBox.style.display = "none";
           okNote.textContent = "✅ " + (job.detail || "Ready!") + " — preview it above, then click Save to your device to download";
           saveLink.href = `/api/file/${jobId}`;
-          preview.src = `/api/file/${jobId}`;
+          preview.src = `/api/file/${jobId}?inline=1`;
           resultBox.style.display = "block";
           btn.disabled = false;
           btn.textContent = "Download";
