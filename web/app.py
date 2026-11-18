@@ -1,9 +1,10 @@
-"""YouTube Shorts Downloader — web version (Flask).
+"""YouTube Downloader — web version (Flask).
 
 Serves a minimal index page. Downloads run in background threads; the
 frontend polls /api/progress/<id> for live progress and fetches the
 finished MP4 from /api/file/<id>. Uses yt-dlp, with FFmpeg (system
 install, or bundled via imageio-ffmpeg) for merging video + audio.
+Works for regular YouTube videos and Shorts.
 """
 
 import re
@@ -13,6 +14,7 @@ import threading
 import time
 import uuid
 from pathlib import Path
+from urllib.parse import parse_qs, urlparse
 
 import yt_dlp
 from flask import Flask, abort, jsonify, render_template, request, send_file
@@ -23,14 +25,6 @@ from flask import Flask, abort, jsonify, render_template, request, send_file
 
 DOWNLOAD_DIR = Path(tempfile.gettempdir()) / "yt_shorts_downloader_web"
 FILE_MAX_AGE_SECONDS = 60 * 30  # purge cached files/jobs older than 30 min
-
-YOUTUBE_URL_RE = re.compile(
-    r"^(?:https?://)?(?:www\.|m\.)?"
-    r"(?:youtube\.com/(?:shorts/|watch\?v=|live/)|youtu\.be/)"
-    r"(?P<id>[A-Za-z0-9_-]{11})"
-    r"(?:[?&#/].*)?$",
-    re.IGNORECASE,
-)
 
 app = Flask(__name__)
 
@@ -61,9 +55,38 @@ def check_ffmpeg() -> str | None:
 
 
 def extract_video_id(url: str) -> str | None:
-    """Return the 11-character video ID if the URL looks like a YouTube URL."""
-    match = YOUTUBE_URL_RE.match(url.strip())
-    return match.group("id") if match else None
+    """Return the 11-character video ID from any common YouTube URL form.
+
+    Accepts: youtube.com/watch?v=<id> (any param order), /shorts/<id>,
+    /live/<id>, /embed/<id>, /v/<id>, youtu.be/<id>, on www./m./mobile.
+    hosts, with or without a scheme.
+    """
+    url = url.strip()
+    if not re.match(r"^https?://", url, re.IGNORECASE):
+        url = "https://" + url
+    try:
+        parsed = urlparse(url)
+    except ValueError:
+        return None
+    if parsed.scheme not in ("http", "https"):
+        return None
+
+    host = (parsed.netloc or "").lower()
+    host = re.sub(r"^(www\.|m\.|mobile\.)", "", host)
+    id_re = re.compile(r"^[A-Za-z0-9_-]{11}$")
+
+    if host == "youtu.be":
+        vid = (parsed.path.lstrip("/").split("/") or [""])[0]
+        return vid if id_re.match(vid) else None
+
+    if host == "youtube.com" or host.endswith(".youtube.com"):
+        m = re.match(r"^/(?:shorts|live|embed|v)/([A-Za-z0-9_-]{11})(?:[/?#].*)?$", parsed.path)
+        if m:
+            return m.group(1)
+        if parsed.path.rstrip("/") == "/watch":
+            vid = (parse_qs(parsed.query).get("v") or [""])[0]
+            return vid if id_re.match(vid) else None
+    return None
 
 
 def friendly_error(exc: Exception) -> str:
@@ -195,12 +218,13 @@ def start_download():
     url = (payload.get("url") or "").strip()
 
     if not url:
-        return jsonify(error="Please paste a YouTube Shorts URL first."), 400
+        return jsonify(error="Please paste a YouTube URL first."), 400
     video_id = extract_video_id(url)
     if video_id is None:
         return jsonify(
             error="That doesn't look like a valid YouTube URL. "
-                  "Expected something like https://www.youtube.com/shorts/xxxxxxxxxxx"
+                  "Expected a link like https://www.youtube.com/watch?v=… , "
+                  "/shorts/… , or https://youtu.be/…"
         ), 400
 
     job_id = uuid.uuid4().hex

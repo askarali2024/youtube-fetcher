@@ -1,14 +1,14 @@
-# 🎬 YouTube Shorts Downloader
+# 🎬 YouTube Video & Shorts Downloader
 
-Download YouTube Shorts as MP4 — paste a link, hit Download. No accounts, no tracking.
+Download YouTube videos and Shorts as MP4 — paste a link, hit Download. No accounts, no tracking.
 
 **Use it here:** https://askarali2024.github.io/youtube-fetcher/
 
 ## How to use
 
-1. Copy the link of a YouTube Short, e.g. `https://www.youtube.com/shorts/dQw4w9WgXcQ` (share links like `https://youtu.be/dQw4w9WgXcQ` also work).
+1. Copy the link of a YouTube video or Short, e.g. `https://www.youtube.com/watch?v=dQw4w9WgXcQ`, `https://www.youtube.com/shorts/zss_cbGqA_g`, or a share link like `https://youtu.be/dQw4w9WgXcQ`.
 2. Paste it into the URL field.
-3. Click **Download** — the video downloads straight to your device.
+3. Click **Download**, preview the video, then click **Save to your device**.
 
 ## How it works
 

@@ -1,8 +1,8 @@
-"""YouTube Shorts Downloader — a lightweight Streamlit app.
+"""YouTube Downloader — a lightweight Streamlit app.
 
-Paste a YouTube Shorts URL, click Download, and save the video as an MP4.
-Uses yt-dlp for extraction/download and FFmpeg (if available) to merge
-high-quality video + audio streams.
+Paste a YouTube video or Shorts URL, click Download, and save the video
+as an MP4. Uses yt-dlp for extraction/download and FFmpeg (if available)
+to merge high-quality video + audio streams.
 """
 
 import re
@@ -10,6 +10,7 @@ import shutil
 import tempfile
 import time
 from pathlib import Path
+from urllib.parse import parse_qs, urlparse
 
 import streamlit as st
 import yt_dlp
@@ -20,21 +21,11 @@ import yt_dlp
 
 DOWNLOAD_DIR = Path(tempfile.gettempdir()) / "yt_shorts_downloader"
 FILE_MAX_AGE_SECONDS = 60 * 30  # purge cached files older than 30 min
+# Files above this size skip the in-browser preview (too heavy to load);
+# the download button still works.
+PREVIEW_MAX_MB = 150
 
-# Matches:
-#   youtube.com/shorts/<id>   (canonical Shorts URL)
-#   m.youtube.com/shorts/<id>
-#   youtu.be/<id>            (share link)
-#   youtube.com/watch?v=<id>  (regular watch URL, just in case)
-YOUTUBE_URL_RE = re.compile(
-    r"^(?:https?://)?(?:www\.|m\.)?"
-    r"(?:youtube\.com/(?:shorts/|watch\?v=|live/)|youtu\.be/)"
-    r"(?P<id>[A-Za-z0-9_-]{11})"
-    r"(?:[?&#/].*)?$",
-    re.IGNORECASE,
-)
-
-st.set_page_config(page_title="YouTube Shorts Downloader", page_icon="🎬", layout="centered")
+st.set_page_config(page_title="YouTube Downloader", page_icon="🎬", layout="centered")
 
 
 # ---------------------------------------------------------------------------
@@ -58,11 +49,38 @@ def check_ffmpeg() -> str | None:
 
 
 def extract_video_id(url: str) -> str | None:
-    """Return the 11-character video ID if the URL looks like a YouTube URL."""
-    match = YOUTUBE_URL_RE.match(url.strip())
-    if not match:
+    """Return the 11-character video ID from any common YouTube URL form.
+
+    Accepts: youtube.com/watch?v=<id> (any param order), /shorts/<id>,
+    /live/<id>, /embed/<id>, /v/<id>, youtu.be/<id>, on www./m./mobile.
+    hosts, with or without a scheme.
+    """
+    url = url.strip()
+    if not re.match(r"^https?://", url, re.IGNORECASE):
+        url = "https://" + url
+    try:
+        parsed = urlparse(url)
+    except ValueError:
         return None
-    return match.group("id")
+    if parsed.scheme not in ("http", "https"):
+        return None
+
+    host = (parsed.netloc or "").lower()
+    host = re.sub(r"^(www\.|m\.|mobile\.)", "", host)
+    id_re = re.compile(r"^[A-Za-z0-9_-]{11}$")
+
+    if host == "youtu.be":
+        vid = (parsed.path.lstrip("/").split("/") or [""])[0]
+        return vid if id_re.match(vid) else None
+
+    if host == "youtube.com" or host.endswith(".youtube.com"):
+        m = re.match(r"^/(?:shorts|live|embed|v)/([A-Za-z0-9_-]{11})(?:[/?#].*)?$", parsed.path)
+        if m:
+            return m.group(1)
+        if parsed.path.rstrip("/") == "/watch":
+            vid = (parse_qs(parsed.query).get("v") or [""])[0]
+            return vid if id_re.match(vid) else None
+    return None
 
 
 def cleanup_old_files() -> None:
@@ -173,8 +191,8 @@ def friendly_error(exc: Exception) -> str:
 
 cleanup_old_files()
 
-st.title("🎬 YouTube Shorts Downloader")
-st.caption("Paste a Shorts URL, hit Download, and save the video as an MP4.")
+st.title("🎬 YouTube Downloader")
+st.caption("Paste a YouTube video or Shorts URL, hit Download, and save the video as an MP4.")
 
 ffmpeg_path = check_ffmpeg()
 if ffmpeg_path is None:
@@ -189,19 +207,19 @@ if ffmpeg_path is None:
 
 with st.form("download_form"):
     url = st.text_input(
-        "YouTube Shorts URL",
-        placeholder="https://www.youtube.com/shorts/xxxxxxxxxxx",
+        "YouTube URL",
+        placeholder="https://www.youtube.com/watch?v=… or /shorts/…",
     )
     submitted = st.form_submit_button("Download", type="primary", use_container_width=True)
 
 if submitted:
     if not url.strip():
-        st.error("Please paste a YouTube Shorts URL first.")
+        st.error("Please paste a YouTube URL first.")
     elif (video_id := extract_video_id(url)) is None:
         st.error(
             "That doesn't look like a valid YouTube URL.\n\n"
-            "Expected something like `https://www.youtube.com/shorts/xxxxxxxxxxx` "
-            "or `https://youtu.be/xxxxxxxxxxx`."
+            "Expected a link like `https://www.youtube.com/watch?v=…` , "
+            "`https://www.youtube.com/shorts/…` , or `https://youtu.be/…`."
         )
     else:
         try:
@@ -223,7 +241,13 @@ if file_path and Path(file_path).exists():
     size_mb = len(file_bytes) / (1024 * 1024)
 
     st.success(f"Ready! ({size_mb:.1f} MB)")
-    st.video(file_bytes)
+    if size_mb <= PREVIEW_MAX_MB:
+        st.video(file_bytes)
+    else:
+        st.info(
+            "This file is too large to preview in the browser — "
+            "use the download button below to save it."
+        )
 
     st.download_button(
         "⬇️ Save to your device",
