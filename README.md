@@ -1,12 +1,16 @@
-# 🎬 YouTube Video & Shorts Downloader
+# 🎬 YouTube Shorts Downloader
 
-Download YouTube videos and Shorts as MP4 — paste a link, hit Download. No accounts, no tracking.
+Download YouTube Shorts as MP4 — paste a link, hit Download. No accounts, no tracking.
 
 **Use it here:** https://askarali2024.github.io/youtube-fetcher/
 
+> **Note:** the Pages app is for **Shorts** — the free community servers it relies on
+> can't handle longer videos (they stream empty responses). For regular videos, use
+> the self-hosted Python versions below; they use yt-dlp and handle any video.
+
 ## How to use
 
-1. Copy the link of a YouTube video or Short, e.g. `https://www.youtube.com/watch?v=dQw4w9WgXcQ`, `https://www.youtube.com/shorts/zss_cbGqA_g`, or a share link like `https://youtu.be/dQw4w9WgXcQ`.
+1. Copy the link of a YouTube Short, e.g. `https://www.youtube.com/shorts/zss_cbGqA_g` or a share link like `https://youtu.be/zss_cbGqA_g`.
 2. Paste it into the URL field.
 3. Click **Download**, preview the video, then click **Save to your device**.
 
@@ -35,9 +39,9 @@ The community instances that power downloads are run by volunteers and occasiona
 
 | Path | What it is | When to use |
 |---|---|---|
-| `index.html` | Static GitHub Pages app | **Default — share the Pages link.** |
-| `web/` | Flask + yt-dlp backend (self-host) | You want downloads processed by your own server instead of community instances. |
-| `app.py` + `requirements.txt` | Streamlit single-file app | Quick local personal use from the terminal. |
+| `index.html` | Static GitHub Pages app | **Default for Shorts — share the Pages link.** |
+| `web/` | Flask + yt-dlp backend (self-host) | Downloads of any video/Short, processed by your own server. |
+| `app.py` + `requirements.txt` | Streamlit single-file app | Any video/Short, quick local personal use from the terminal. |
 
 ### Flask version (`web/`)
 
